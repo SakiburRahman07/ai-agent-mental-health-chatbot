@@ -17,6 +17,24 @@ from langchain_core.pydantic_v1 import BaseModel, Field
 # The key fix: Add proper annotations for the state
 from langgraph.graph.message import add_messages
 
+# Define agent state with proper annotation for messages
+class AgentState(TypedDict):
+    messages: Annotated[List[Union[HumanMessage, AIMessage, SystemMessage, FunctionMessage]], add_messages]
+    emotion_analysis: NotRequired[Dict[str, Any]]
+    response_strategy: NotRequired[Dict[str, Any]]
+    immediate_resources_needed: NotRequired[bool]
+    reasoning_visible: NotRequired[bool]
+    user_preferences: NotRequired[Dict[str, Any]]
+    tool_results: NotRequired[Dict[str, Any]]
+    query_route: NotRequired[str]
+    # New fields for enhanced features
+    mood_history: NotRequired[List[Dict[str, Any]]]
+    cultural_context: NotRequired[Dict[str, Any]]
+    cbt_progress: NotRequired[Dict[str, Any]]
+    self_care_recommendations: NotRequired[List[Dict[str, Any]]]
+    last_professional_referral: NotRequired[str]  # Timestamp of last referral
+    psychoeducation_topics_covered: NotRequired[List[str]]
+
 # Tools and utilities
 from langchain_community.tools import WikipediaQueryRun, ArxivQueryRun
 from langchain_community.utilities import WikipediaAPIWrapper, ArxivAPIWrapper
@@ -410,89 +428,145 @@ def suggest_cbt_exercise(emotion: str, context: str) -> Dict[str, Any]:
         "steps": selected_exercise["steps"]
     }
 
-@tool
-def suggest_self_care_activity(emotion: str, preferences: Dict[str, Any]) -> Dict[str, str]:
-    """
-    Suggest a personalized self-care activity based on emotional state and preferences.
+def suggest_self_care(state: AgentState) -> Dict:
+    """Suggest personalized self-care activities."""
+    messages = state["messages"]
+    emotion_analysis = state.get("emotion_analysis", {})
+    user_preferences = state.get("user_preferences", {})
     
-    Args:
-        emotion: The primary emotion the user is experiencing
-        preferences: User preferences to customize suggestions
+    primary_emotion = emotion_analysis.get("primary_emotion", "neutral")
+    
+    # Get self-care suggestions
+    try:
+        # Direct invocation of the function instead of using the tool decorator
+        # This bypasses the callback system that's causing the error
+        emotion = primary_emotion
+        preferences = user_preferences
         
-    Returns:
-        A dictionary with self-care suggestion details
+        # Categories of self-care activities
+        physical_activities = [
+            "Take a 10-minute walk outside, focusing on the sensations around you",
+            "Do a quick 5-minute stretch routine to release tension",
+            "Try 3 minutes of jumping jacks or dancing to get your blood flowing",
+            "Practice deep breathing: inhale for 4 counts, hold for 4, exhale for 6",
+            "Splash cold water on your face to help reset your nervous system"
+        ]
+        
+        mental_activities = [
+            "Take a 5-minute break from screens",
+            "Write down three thoughts you're having, then challenge their accuracy",
+            "Do a quick puzzle or brain game to shift your focus",
+            "Visualize a peaceful place for 2 minutes with your eyes closed",
+            "Listen to a guided meditation (I can suggest one if you'd like)"
+        ]
+        
+        emotional_activities = [
+            "Write down three things you're grateful for right now",
+            "Text a supportive friend or family member just to say hello",
+            "Listen to a song that matches how you'd like to feel",
+            "Look at photos that bring back positive memories",
+            "Give yourself permission to feel your emotions without judgment for 5 minutes"
+        ]
+        
+        # Emotion-specific recommendations
+        if emotion.lower() in ["anxious", "stressed", "fearful", "worried"]:
+            primary_activities = [
+                "Try box breathing: inhale for 4 counts, hold for 4, exhale for 4, hold for 4",
+                "Progressive muscle relaxation: tense and release each muscle group",
+                "Focus on an object near you and describe 5 details about it",
+                "Step outside and name 3 things you can see, hear, and feel",
+                "Wrap yourself in a warm blanket and make a cup of caffeine-free tea"
+            ]
+        elif emotion.lower() in ["sad", "depressed", "down", "hopeless"]:
+            primary_activities = [
+                "Do just one small task and celebrate completing it",
+                "Open curtains or blinds to let in natural light",
+                "Step outside for 5 minutes of sunlight",
+                "Listen to uplifting music or a comedy podcast",
+                "Call or message someone who makes you feel good"
+            ]
+        elif emotion.lower() in ["angry", "frustrated", "irritated"]:
+            primary_activities = [
+                "Write down what's bothering you, then tear it up",
+                "Do a physical activity to release tension (jumping jacks, pushups)",
+                "Count backward slowly from 20 to 1",
+                "Find a private place and let yourself scream into a pillow",
+                "Wash your hands with cold water, focusing on the sensation"
+            ]
+        else:  # For other emotions or to maintain positive states
+            primary_activities = [
+                "Take a moment to appreciate something beautiful around you",
+                "Do something creative for 10 minutes",
+                "Send a kind message to someone",
+                "Take a few minutes to plan something you can look forward to",
+                "Write down one thing you're proud of about yourself"
+            ]
+        
+        # Combine and select activities
+        import random
+        
+        all_activities = primary_activities + physical_activities + mental_activities + emotional_activities
+        selected_activity = random.choice(primary_activities)  # Bias toward emotion-specific activities
+        alternative_activity = random.choice([a for a in all_activities if a != selected_activity])
+        
+        activity_benefit = ""
+        if emotion.lower() in ["anxious", "stressed", "fearful", "worried"]:
+            activity_benefit = "ground you in the present moment and calm your nervous system"
+        elif emotion.lower() in ["sad", "depressed", "down", "hopeless"]:
+            activity_benefit = "gently activate your energy and connect with positive experiences"
+        elif emotion.lower() in ["angry", "frustrated", "irritated"]:
+            activity_benefit = "release tension and create space between feelings and reactions"
+        else:
+            activity_benefit = "maintain balance and nurture your wellbeing"
+        
+        suggestions = {
+            "primary_suggestion": selected_activity,
+            "alternative_suggestion": alternative_activity,
+            "rationale": f"When feeling {emotion}, activities that help {activity_benefit} can be particularly helpful."
+        }
+    except Exception as e:
+        # Fallback in case of any error
+        suggestions = {
+            "primary_suggestion": "Take a few deep breaths and notice how your body feels",
+            "alternative_suggestion": "Drink a glass of water and stretch for a moment",
+            "rationale": "Taking a moment for simple self-care can help with any emotion."
+        }
+    
+    # Format the suggestions as a message
+    new_messages = []
+    
+    if state.get("reasoning_visible", True):
+        reasoning_message = f"""
+        💭 **Thinking About Self-Care For You**
+        
+        When feeling **{primary_emotion}**, specific self-care activities can be particularly beneficial.
+        
+        I'm considering what might be most helpful for you right now, with a focus on quick, accessible activities.
+        
+        Let me suggest something that could help...
+        """
+        
+        new_messages.append(
+            FunctionMessage(
+                name="self_care_reasoning",
+                content=reasoning_message
+            )
+        )
+    
+    # Create the self-care message
+    care_message = f"""
+    **Self-Care Suggestion**
+    
+    {suggestions["rationale"]}
+    
+    **You might try:** {suggestions["primary_suggestion"]}
+    
+    **Alternatively:** {suggestions["alternative_suggestion"]}
+    
+    Would you like to try one of these now, or would you prefer a different type of self-care activity?
     """
-    # Categories of self-care activities
-    physical_activities = [
-        "Take a 10-minute walk outside, focusing on the sensations around you",
-        "Do a quick 5-minute stretch routine to release tension",
-        "Try 3 minutes of jumping jacks or dancing to get your blood flowing",
-        "Practice deep breathing: inhale for 4 counts, hold for 4, exhale for 6",
-        "Splash cold water on your face to help reset your nervous system"
-    ]
     
-    mental_activities = [
-        "Take a 5-minute break from screens",
-        "Write down three thoughts you're having, then challenge their accuracy",
-        "Do a quick puzzle or brain game to shift your focus",
-        "Visualize a peaceful place for 2 minutes with your eyes closed",
-        "Listen to a guided meditation (I can suggest one if you'd like)"
-    ]
-    
-    emotional_activities = [
-        "Write down three things you're grateful for right now",
-        "Text a supportive friend or family member just to say hello",
-        "Listen to a song that matches how you'd like to feel",
-        "Look at photos that bring back positive memories",
-        "Give yourself permission to feel your emotions without judgment for 5 minutes"
-    ]
-    
-    # Emotion-specific recommendations
-    if emotion.lower() in ["anxious", "stressed", "fearful", "worried"]:
-        primary_activities = [
-            "Try box breathing: inhale for 4 counts, hold for 4, exhale for 4, hold for 4",
-            "Progressive muscle relaxation: tense and release each muscle group",
-            "Focus on an object near you and describe 5 details about it",
-            "Step outside and name 3 things you can see, hear, and feel",
-            "Wrap yourself in a warm blanket and make a cup of caffeine-free tea"
-        ]
-    elif emotion.lower() in ["sad", "depressed", "down", "hopeless"]:
-        primary_activities = [
-            "Do just one small task and celebrate completing it",
-            "Open curtains or blinds to let in natural light",
-            "Step outside for 5 minutes of sunlight",
-            "Listen to uplifting music or a comedy podcast",
-            "Call or message someone who makes you feel good"
-        ]
-    elif emotion.lower() in ["angry", "frustrated", "irritated"]:
-        primary_activities = [
-            "Write down what's bothering you, then tear it up",
-            "Do a physical activity to release tension (jumping jacks, pushups)",
-            "Count backward slowly from 20 to 1",
-            "Find a private place and let yourself scream into a pillow",
-            "Wash your hands with cold water, focusing on the sensation"
-        ]
-    else:  # For other emotions or to maintain positive states
-        primary_activities = [
-            "Take a moment to appreciate something beautiful around you",
-            "Do something creative for 10 minutes",
-            "Send a kind message to someone",
-            "Take a few minutes to plan something you can look forward to",
-            "Write down one thing you're proud of about yourself"
-        ]
-    
-    # Combine and select activities
-    import random
-    
-    all_activities = primary_activities + physical_activities + mental_activities + emotional_activities
-    selected_activity = random.choice(primary_activities)  # Bias toward emotion-specific activities
-    alternative_activity = random.choice([a for a in all_activities if a != selected_activity])
-    
-    return {
-        "primary_suggestion": selected_activity,
-        "alternative_suggestion": alternative_activity,
-        "rationale": f"When feeling {emotion}, activities that help {get_activity_benefit(emotion)} can be particularly helpful."
-    }
+    return {"messages": new_messages + [AIMessage(content=care_message)]}
 
 def get_activity_benefit(emotion: str) -> str:
     """Get the benefit description based on emotion."""
@@ -647,24 +721,6 @@ def provide_psychoeducation(topic: str) -> Dict[str, str]:
             ]
         }
 
-# Define agent state with proper annotation for messages
-class AgentState(TypedDict):
-    messages: Annotated[List[Union[HumanMessage, AIMessage, SystemMessage, FunctionMessage]], add_messages]
-    emotion_analysis: NotRequired[Dict[str, Any]]
-    response_strategy: NotRequired[Dict[str, Any]]
-    immediate_resources_needed: NotRequired[bool]
-    reasoning_visible: NotRequired[bool]
-    user_preferences: NotRequired[Dict[str, Any]]
-    tool_results: NotRequired[Dict[str, Any]]
-    query_route: NotRequired[str]
-    # New fields for enhanced features
-    mood_history: NotRequired[List[Dict[str, Any]]]
-    cultural_context: NotRequired[Dict[str, Any]]
-    cbt_progress: NotRequired[Dict[str, Any]]
-    self_care_recommendations: NotRequired[List[Dict[str, Any]]]
-    last_professional_referral: NotRequired[str]  # Timestamp of last referral
-    psychoeducation_topics_covered: NotRequired[List[str]]
-    
 # System message
 SYSTEM_MESSAGE = """You are an empathetic mental health assistant designed to help people through difficult times.
 
@@ -1446,53 +1502,6 @@ def provide_cbt_exercise(state: AgentState) -> Dict:
         "cbt_progress": cbt_progress,
         "messages": new_messages + [AIMessage(content=exercise_message)]
     }
-
-def suggest_self_care(state: AgentState) -> Dict:
-    """Suggest personalized self-care activities."""
-    messages = state["messages"]
-    emotion_analysis = state.get("emotion_analysis", {})
-    user_preferences = state.get("user_preferences", {})
-    
-    primary_emotion = emotion_analysis.get("primary_emotion", "neutral")
-    
-    # Get self-care suggestions
-    suggestions = suggest_self_care_activity(primary_emotion, user_preferences)
-    
-    # Format the suggestions as a message
-    new_messages = []
-    
-    if state.get("reasoning_visible", True):
-        reasoning_message = f"""
-        💭 **Thinking About Self-Care For You**
-        
-        When feeling **{primary_emotion}**, specific self-care activities can be particularly beneficial.
-        
-        I'm considering what might be most helpful for you right now, with a focus on quick, accessible activities.
-        
-        Let me suggest something that could help...
-        """
-        
-        new_messages.append(
-            FunctionMessage(
-                name="self_care_reasoning",
-                content=reasoning_message
-            )
-        )
-    
-    # Create the self-care message
-    care_message = f"""
-    **Self-Care Suggestion**
-    
-    {suggestions["rationale"]}
-    
-    **You might try:** {suggestions["primary_suggestion"]}
-    
-    **Alternatively:** {suggestions["alternative_suggestion"]}
-    
-    Would you like to try one of these now, or would you prefer a different type of self-care activity?
-    """
-    
-    return {"messages": new_messages + [AIMessage(content=care_message)]}
 
 def provide_education(state: AgentState) -> Dict:
     """Provide psychoeducation on mental health topics."""
