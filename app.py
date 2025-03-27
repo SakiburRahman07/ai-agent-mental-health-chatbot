@@ -656,6 +656,7 @@ with main_tab:
     def process_assistant_response(result):
         current_messages = st.session_state.messages.copy()
         
+        # Store all messages in session state
         for msg in result["messages"]:
             if isinstance(msg, HumanMessage):
                 # Skip human messages as we've already added the user input
@@ -668,27 +669,29 @@ with main_tab:
                 # Add assistant message to chat history
                 st.session_state.messages.append({"role": "assistant", "content": msg.content})
                 
-                # Display assistant message
-                with st.chat_message("assistant"):
-                    st.write(msg.content)
-                    
-                    # Extract and display YouTube videos if present
-                    youtube_links = re.findall(r'https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([^\s&]+)', msg.content)
-                    if youtube_links:
-                        for link in youtube_links[:1]:
-                            full_url = f"https://www.youtube.com/watch?v={link}"
-                            display_youtube_video(full_url)
+                # Display only the LAST assistant message
+                if msg == result["messages"][-1] or (isinstance(result["messages"][-1], FunctionMessage) and msg == [m for m in result["messages"] if isinstance(m, AIMessage)][-1]):
+                    with st.chat_message("assistant"):
+                        st.write(msg.content)
+                        
+                        # Extract and display YouTube videos if present
+                        youtube_links = re.findall(r'https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([^\s&]+)', msg.content)
+                        if youtube_links:
+                            for link in youtube_links[:1]:  # Limit to first video to avoid cluttering
+                                full_url = f"https://www.youtube.com/watch?v={link}"
+                                display_youtube_video(full_url)
             
             elif isinstance(msg, FunctionMessage):
                 if len(current_messages) > 0 and any(m["role"] == "function" and m["content"] == msg.content for m in current_messages):
                     continue
                 
-                # Add function message (reasoning) to chat history
+                # Add function message (reasoning) to chat history but don't display it by default
                 st.session_state.messages.append({"role": "function", "content": msg.content, "name": msg.name})
                 
-                # Display function message (reasoning)
-                with st.chat_message("assistant", avatar="💭"):
-                    display_thinking(msg.content)
+                # Only display reasoning if explicitly enabled
+                if st.session_state.get("reasoning_visible", True):
+                    with st.chat_message("assistant", avatar="💭"):
+                        display_thinking(msg.content)
 
     # Emotion integration in chat UI
     chat_container = st.container()

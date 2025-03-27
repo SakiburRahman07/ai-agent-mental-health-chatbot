@@ -1,4 +1,5 @@
 import os
+import re
 from typing import List, Annotated, TypedDict, Union, Dict, Optional, Literal, Any
 from typing_extensions import TypedDict, NotRequired
 
@@ -720,6 +721,173 @@ def provide_psychoeducation(topic: str) -> Dict[str, str]:
                 "Mental health professionals can provide personalized guidance"
             ]
         }
+
+@tool
+def generate_therapeutic_story(struggle: str, context: str = "") -> Dict[str, str]:
+    """
+    Generate a personalized therapeutic story based on narrative therapy principles.
+    
+    Args:
+        struggle: The specific challenge or emotion the user is facing (e.g., "fear of failure")
+        context: Additional context about the user's situation (optional)
+        
+    Returns:
+        A dictionary containing the therapeutic story and reflection questions
+    """
+    # Define common story archetypes and metaphors for different struggles
+    story_archetypes = {
+        "anxiety": {
+            "metaphors": ["river", "storm", "mountain", "maze"],
+            "themes": ["courage", "breathing", "perspective", "facing fears"],
+            "heroes": ["explorer", "navigator", "climber", "guide"]
+        },
+        "depression": {
+            "metaphors": ["winter", "dark cave", "fog", "heavy backpack"],
+            "themes": ["light", "seasons", "rest", "connection"],
+            "heroes": ["traveler", "gardener", "lighthouse keeper", "dawn bringer"]
+        },
+        "grief": {
+            "metaphors": ["ocean", "changing tree", "bridge", "mosaic"],
+            "themes": ["memory", "honoring", "integration", "transformation"],
+            "heroes": ["memory keeper", "bridge builder", "weaver", "composer"]
+        },
+        "fear": {
+            "metaphors": ["closed door", "shadow", "uncharted territory", "high cliff"],
+            "themes": ["curiosity", "courage", "unknown", "stepping forward"],
+            "heroes": ["door opener", "light bearer", "map maker", "cliff climber"]
+        },
+        "anger": {
+            "metaphors": ["fire", "storm", "tangled knot", "pressure cooker"],
+            "themes": ["power", "energy", "boundaries", "transformation"],
+            "heroes": ["fire keeper", "weather worker", "untangler", "pressure release"]
+        },
+        "guilt": {
+            "metaphors": ["heavy stone", "locked room", "repeating record", "mirror"],
+            "themes": ["forgiveness", "compassion", "learning", "release"],
+            "heroes": ["stone bearer", "key finder", "new composer", "truth seeker"]
+        },
+        "shame": {
+            "metaphors": ["mask", "invisibility cloak", "cave", "wall"],
+            "themes": ["authenticity", "acceptance", "belonging", "speaking"],
+            "heroes": ["mask remover", "voice finder", "light bearer", "bridge builder"]
+        },
+        "identity": {
+            "metaphors": ["river", "mirror", "garden", "tapestry"],
+            "themes": ["growth", "integration", "discovery", "cultivation"],
+            "heroes": ["gardener", "navigator", "weaver", "mirror holder"]
+        },
+        "perfectionism": {
+            "metaphors": ["impossible mountain", "never-ending path", "unreachable star", "golden cage"],
+            "themes": ["acceptance", "growth", "process", "good enough"],
+            "heroes": ["path walker", "star counter", "cage opener", "good-enough finder"]
+        },
+        "failure": {
+            "metaphors": ["blocked road", "fallen attempt", "closed door", "missed mark"],
+            "themes": ["learning", "resilience", "redirection", "wisdom"],
+            "heroes": ["path finder", "rising phoenix", "door creator", "arrow adjuster"]
+        }
+    }
+    
+    # Identify which archetype to use based on the struggle
+    identified_archetype = None
+    for struggle_type, archetype in story_archetypes.items():
+        if struggle_type in struggle.lower():
+            identified_archetype = archetype
+            struggle_key = struggle_type
+            break
+    
+    # Default to "fear" archetype if no match found
+    if not identified_archetype:
+        import random
+        struggle_key = random.choice(list(story_archetypes.keys()))
+        identified_archetype = story_archetypes[struggle_key]
+    
+    # Create a prompt to generate the therapeutic story
+    story_prompt = ChatPromptTemplate.from_messages([
+        SystemMessage(content=f"""You are a therapeutic storyteller who creates healing narratives based on narrative therapy principles.
+        
+        Create a brief allegorical story (500-800 words) where the protagonist faces and learns to work with {struggle}. 
+        The story should:
+        
+        1. Use metaphors related to: {', '.join(identified_archetype['metaphors'])}
+        2. Incorporate themes of: {', '.join(identified_archetype['themes'])}
+        3. Cast the protagonist as a type of: {', '.join(identified_archetype['heroes'])}
+        4. Include these narrative therapy elements:
+           - Externalization (separating the person from the problem)
+           - Identifying unique outcomes (exceptions to the problem's influence)
+           - Thickening the preferred narrative (strengthening the story of capability)
+        5. End with a sense of hope and new possibilities
+        6. Include 3-4 reflection questions to help the reader connect the story to their own experience
+        
+        The story should be engaging, conversational, and avoid being preachy or overly simplistic.
+        Write in second person ("you") to help the reader identify as the protagonist.
+        
+        Format your response as:
+        
+        # TITLE
+        
+        STORY CONTENT
+        
+        ## Reflection Questions:
+        1. First question
+        2. Second question
+        3. Third question
+        """),
+        HumanMessage(content=f"Create a therapeutic story for someone struggling with {struggle}. Additional context about their situation: {context}")
+    ])
+    
+    # Generate the story
+    formatted_messages = story_prompt.format_messages()
+    story_response = llm.invoke(formatted_messages)
+    
+    # Extract title, story content, and reflection questions
+    content = story_response.content
+    
+    # Parse the content
+    title = "Your Therapeutic Story"
+    story_body = content
+    reflection_questions = []
+    
+    # Try to extract the title
+    title_match = re.search(r'#\s*(.*?)\n', content)
+    if title_match:
+        title = title_match.group(1).strip()
+        story_body = content.replace(title_match.group(0), "", 1)
+    
+    # Try to extract reflection questions
+    questions_section = re.search(r'##\s*Reflection Questions:?([\s\S]*?)($|#)', content + "#")
+    if questions_section:
+        questions_text = questions_section.group(1)
+        # Find numbered questions
+        question_matches = re.findall(r'\d+\.\s*(.*?)(?=\n\d+\.|\n##|\n#|$)', questions_text + "\n##")
+        if question_matches:
+            reflection_questions = [q.strip() for q in question_matches]
+        story_body = content.replace(questions_section.group(0), "", 1)
+    
+    # Ensure we have at least some reflection questions
+    if not reflection_questions:
+        reflection_questions = [
+            f"How does this story relate to your experience with {struggle}?",
+            "What part of the story resonates most with you, and why?",
+            "What new perspective might this story offer about your situation?"
+        ]
+    
+    # Create therapeutic metaphor explanation
+    metaphor_explanation = f"""
+    In narrative therapy, metaphors help externalize problems, allowing us to see them as separate from our identity.
+    
+    This story uses the metaphor of {identified_archetype['metaphors'][0]} to help reframe your experience with {struggle}.
+    
+    By seeing yourself as the {identified_archetype['heroes'][0]} in this journey, you can draw on your inherent strengths of {identified_archetype['themes'][0]} and {identified_archetype['themes'][1]}.
+    """
+    
+    return {
+        "title": title,
+        "story": story_body.strip(),
+        "reflection_questions": reflection_questions,
+        "metaphor_explanation": metaphor_explanation.strip(),
+        "struggle_addressed": struggle
+    }
 
 # System message
 SYSTEM_MESSAGE = """You are an empathetic mental health assistant designed to help people through difficult times.
@@ -1572,25 +1740,651 @@ def provide_education(state: AgentState) -> Dict:
         "messages": new_messages + [AIMessage(content=education_message)]
     }
 
-# First, delete these lines that appear too early (around line 1667)
-# workflow.add_conditional_edges(
-#     "crisis_resources",
-#     lambda state: state.get("query_route", "general_advice"),
-#     {
-#         "cbt_exercise": "provide_cbt",
-#         "self_care": "suggest_self_care",
-#         "psychoeducation": "provide_education",
-#         "general_advice": "explain_tools",
-#         "knowledge_base": "explain_tools",
-#         "video_resources": "explain_tools",
-#         "academic_research": "explain_tools",
-#         "crisis_resources": "explain_tools",
-#         "mood_tracking": "explain_tools",
-#         "default": "explain_tools"  # Just in case
-#     }
-# )
+def provide_therapeutic_story(state: AgentState) -> Dict:
+    """Generate and provide a therapeutic story based on the user's struggle."""
+    messages = state["messages"]
+    emotion_analysis = state.get("emotion_analysis", {})
+    
+    # Get the latest user message
+    if not any(isinstance(msg, HumanMessage) for msg in messages):
+        return state
+    
+    latest_user_msg = [msg for msg in messages if isinstance(msg, HumanMessage)][-1].content
+    
+    # Identify the struggle from the message
+    struggle_prompt = ChatPromptTemplate.from_messages([
+        SystemMessage(content="""Extract the main emotional struggle or challenge from this message.
+        Return only a brief phrase (2-5 words) describing the core struggle, such as "fear of failure", 
+        "social anxiety", or "coping with grief"."""),
+        HumanMessage(content=latest_user_msg)
+    ])
+    
+    formatted_messages = struggle_prompt.format_messages()
+    struggle_response = llm.invoke(formatted_messages)
+    struggle = struggle_response.content.strip()
+    
+    # Get additional context from the emotional analysis
+    context = ""
+    if emotion_analysis:
+        primary_emotion = emotion_analysis.get("primary_emotion", "")
+        justification = emotion_analysis.get("emotion_justification", "")
+        context = f"They are feeling {primary_emotion}. {justification}"
+    
+    # Generate the therapeutic story - FIXED: Direct access to the function instead of using the tool
+    # Bypass the callback system that's causing the AttributeError
+    try:
+        # Using direct access to story archetypes and LLM 
+        # instead of going through the tool's invoke mechanism with callbacks
+        story_archetypes = {
+            "anxiety": {
+                "metaphors": ["river", "storm", "mountain", "maze"],
+                "themes": ["courage", "breathing", "perspective", "facing fears"],
+                "heroes": ["explorer", "navigator", "climber", "guide"]
+            },
+            "depression": {
+                "metaphors": ["winter", "dark cave", "fog", "heavy backpack"],
+                "themes": ["light", "seasons", "rest", "connection"],
+                "heroes": ["traveler", "gardener", "lighthouse keeper", "dawn bringer"]
+            },
+            "grief": {
+                "metaphors": ["ocean", "changing tree", "bridge", "mosaic"],
+                "themes": ["memory", "honoring", "integration", "transformation"],
+                "heroes": ["memory keeper", "bridge builder", "weaver", "composer"]
+            },
+            "fear": {
+                "metaphors": ["closed door", "shadow", "uncharted territory", "high cliff"],
+                "themes": ["curiosity", "courage", "unknown", "stepping forward"],
+                "heroes": ["door opener", "light bearer", "map maker", "cliff climber"]
+            },
+            "anger": {
+                "metaphors": ["fire", "storm", "tangled knot", "pressure cooker"],
+                "themes": ["power", "energy", "boundaries", "transformation"],
+                "heroes": ["fire keeper", "weather worker", "untangler", "pressure release"]
+            },
+            "guilt": {
+                "metaphors": ["heavy stone", "locked room", "repeating record", "mirror"],
+                "themes": ["forgiveness", "compassion", "learning", "release"],
+                "heroes": ["stone bearer", "key finder", "new composer", "truth seeker"]
+            },
+            "shame": {
+                "metaphors": ["mask", "invisibility cloak", "cave", "wall"],
+                "themes": ["authenticity", "acceptance", "belonging", "speaking"],
+                "heroes": ["mask remover", "voice finder", "light bearer", "bridge builder"]
+            },
+            "identity": {
+                "metaphors": ["river", "mirror", "garden", "tapestry"],
+                "themes": ["growth", "integration", "discovery", "cultivation"],
+                "heroes": ["gardener", "navigator", "weaver", "mirror holder"]
+            },
+            "perfectionism": {
+                "metaphors": ["impossible mountain", "never-ending path", "unreachable star", "golden cage"],
+                "themes": ["acceptance", "growth", "process", "good enough"],
+                "heroes": ["path walker", "star counter", "cage opener", "good-enough finder"]
+            },
+            "failure": {
+                "metaphors": ["blocked road", "fallen attempt", "closed door", "missed mark"],
+                "themes": ["learning", "resilience", "redirection", "wisdom"],
+                "heroes": ["path finder", "rising phoenix", "door creator", "arrow adjuster"]
+            }
+        }
+        
+        # Identify which archetype to use based on the struggle
+        identified_archetype = None
+        struggle_key = "fear"  # Default
+        
+        for struggle_type, archetype in story_archetypes.items():
+            if struggle_type in struggle.lower():
+                identified_archetype = archetype
+                struggle_key = struggle_type
+                break
+        
+        # Default to "fear" archetype if no match found
+        if not identified_archetype:
+            import random
+            struggle_key = random.choice(list(story_archetypes.keys()))
+            identified_archetype = story_archetypes[struggle_key]
+        
+        # Create a prompt to generate the therapeutic story
+        story_prompt = ChatPromptTemplate.from_messages([
+            SystemMessage(content=f"""You are a therapeutic storyteller who creates healing narratives based on narrative therapy principles.
+            
+            Create a brief allegorical story (500-800 words) where the protagonist faces and learns to work with {struggle}. 
+            The story should:
+            
+            1. Use metaphors related to: {', '.join(identified_archetype['metaphors'])}
+            2. Incorporate themes of: {', '.join(identified_archetype['themes'])}
+            3. Cast the protagonist as a type of: {', '.join(identified_archetype['heroes'])}
+            4. Include these narrative therapy elements:
+               - Externalization (separating the person from the problem)
+               - Identifying unique outcomes (exceptions to the problem's influence)
+               - Thickening the preferred narrative (strengthening the story of capability)
+            5. End with a sense of hope and new possibilities
+            6. Include 3-4 reflection questions to help the reader connect the story to their own experience
+            
+            The story should be engaging, conversational, and avoid being preachy or overly simplistic.
+            Write in second person ("you") to help the reader identify as the protagonist.
+            
+            Format your response as:
+            
+            # TITLE
+            
+            STORY CONTENT
+            
+            ## Reflection Questions:
+            1. First question
+            2. Second question
+            3. Third question
+            """),
+            HumanMessage(content=f"Create a therapeutic story for someone struggling with {struggle}. Additional context about their situation: {context}")
+        ])
+        
+        # Generate the story
+        formatted_messages = story_prompt.format_messages()
+        story_response = llm.invoke(formatted_messages)
+        content = story_response.content
+        
+        # Parse the content
+        title = "Your Therapeutic Story"
+        story_body = content
+        reflection_questions = []
+        
+        # Try to extract the title
+        import re
+        title_match = re.search(r'#\s*(.*?)\n', content)
+        if title_match:
+            title = title_match.group(1).strip()
+            story_body = content.replace(title_match.group(0), "", 1)
+        
+        # Try to extract reflection questions
+        questions_section = re.search(r'##\s*Reflection Questions:?([\s\S]*?)($|#)', content + "#")
+        if questions_section:
+            questions_text = questions_section.group(1)
+            # Find numbered questions
+            question_matches = re.findall(r'\d+\.\s*(.*?)(?=\n\d+\.|\n##|\n#|$)', questions_text + "\n##")
+            if question_matches:
+                reflection_questions = [q.strip() for q in question_matches]
+            story_body = content.replace(questions_section.group(0), "", 1)
+        
+        # Ensure we have at least some reflection questions
+        if not reflection_questions:
+            reflection_questions = [
+                f"How does this story relate to your experience with {struggle}?",
+                "What part of the story resonates most with you, and why?",
+                "What new perspective might this story offer about your situation?"
+            ]
+        
+        # Create therapeutic metaphor explanation
+        metaphor_explanation = f"""
+        In narrative therapy, metaphors help externalize problems, allowing us to see them as separate from our identity.
+        
+        This story uses the metaphor of {identified_archetype['metaphors'][0]} to help reframe your experience with {struggle}.
+        
+        By seeing yourself as the {identified_archetype['heroes'][0]} in this journey, you can draw on your inherent strengths of {identified_archetype['themes'][0]} and {identified_archetype['themes'][1]}.
+        """
+        
+        story_result = {
+            "title": title,
+            "story": story_body.strip(),
+            "reflection_questions": reflection_questions,
+            "metaphor_explanation": metaphor_explanation.strip(),
+            "struggle_addressed": struggle
+        }
+    except Exception as e:
+        # Fallback if story generation fails
+        story_result = {
+            "title": "A Story About Resilience",
+            "story": f"Once upon a time, there was a person facing {struggle}. Through patience and self-compassion, they discovered new strengths within themselves and found a path forward.",
+            "reflection_questions": [
+                "What strengths have helped you in difficult times before?",
+                "What small step might help you move forward?",
+                "How might you show yourself compassion during this challenge?"
+            ],
+            "metaphor_explanation": "Sometimes our struggles are like storms - they pass with time, and we discover our resilience in weathering them.",
+            "struggle_addressed": struggle
+        }
+    
+    # Format the story as messages
+    new_messages = []
+    
+    if state.get("reasoning_visible", True):
+        reasoning_message = f"""
+        💭 **Crafting a Therapeutic Story for You**
+        
+        I'll create a narrative based on your struggle with **{struggle}**.
+        
+        Therapeutic stories can help externalize our challenges and see them from a new perspective.
+        
+        I'm using elements of narrative therapy to craft a story where you're the hero of your own journey...
+        """
+        
+        new_messages.append(
+            FunctionMessage(
+                name="story_reasoning",
+                content=reasoning_message
+            )
+        )
+    
+    # Create the story message
+    story_message = f"""
+    # {story_result["title"]}
+    
+    {story_result["story"]}
+    
+    ## Reflection Questions:
+    """
+    
+    for i, question in enumerate(story_result["reflection_questions"], 1):
+        story_message += f"\n{i}. {question}"
+    
+    story_message += f"\n\n## How This Story Relates to Your Situation:\n{story_result['metaphor_explanation']}"
+    
+    story_message += "\n\nHow does this story resonate with you? Is there a particular part that speaks to your experience?"
+    
+    return {
+        "messages": new_messages + [AIMessage(content=story_message)]
+    }
 
-# Then make sure choose_pathway is properly defined before it's used
+# Define QueryRouter class
+class QueryRouter(BaseModel):
+    """Route a user query to the most appropriate mental health resource."""
+    route_to: Literal["knowledge_base", "crisis_resources", "video_resources", 
+                      "academic_research", "general_advice", "mood_tracking", 
+                      "cbt_exercise", "self_care", "psychoeducation", "therapeutic_story", 
+                      "follow_up", "motivational", "reflective_listening", "resource_sharing"] = Field(
+        ..., description="Route the query to the most appropriate resource."
+    )
+
+# Define a content classifier to better understand user input intentions
+class ContentClassifier(BaseModel):
+    """Classify the content of a user message to better route it."""
+    content_type: Literal["question", "statement", "request_for_help", "emotional_expression", 
+                          "sharing_experience", "follow_up", "greeting", "gratitude"] = Field(
+        ..., description="The primary type of content in the user's message."
+    )
+    urgency_level: Literal["low", "medium", "high", "emergency"] = Field(
+        ..., description="The urgency level of the user's message."
+    )
+    complexity: Literal["simple", "moderate", "complex"] = Field(
+        ..., description="The complexity level of the user's query or concern."
+    )
+    emotional_tone: Literal["positive", "neutral", "negative", "mixed"] = Field(
+        ..., description="The overall emotional tone of the message."
+    )
+
+# Create improved router prompt 
+router_prompt = ChatPromptTemplate.from_messages([
+    ("system", """You are an expert at routing mental health queries to the most appropriate resources.
+    
+    Options (choose ONE that best fits):
+    - knowledge_base: For factual questions about mental health topics
+    - crisis_resources: For urgent situations where someone needs immediate help
+    - video_resources: For requests for video content or visual learning
+    - academic_research: For in-depth or research-based information
+    - mood_tracking: For questions about tracking emotions or mood patterns
+    - cbt_exercise: For requests about cognitive behavioral therapy techniques
+    - self_care: For advice on personal well-being activities
+    - psychoeducation: For educational content about mental health concepts
+    - therapeutic_story: For requests about stories, metaphors, or narrative approaches to healing
+    - follow_up: For messages that refer to or follow up on previous conversations
+    - motivational: For when the user needs encouragement or motivation
+    - reflective_listening: For when the user mainly shares feelings without asking a specific question
+    - resource_sharing: For when the user specifically asks for resources, tools, or materials
+    - general_advice: For general mental health advice that doesn't fit the above categories
+    
+    Key routing guidelines:
+    - Route to crisis_resources for any messages suggesting harm to self or others
+    - Route to therapeutic_story when the user describes a struggle they're trying to understand or process
+    - Route to reflective_listening when the user mainly shares feelings without asking a specific question
+    - Route to resource_sharing when there's a clear request for materials, tools, or external resources
+    - Route to motivational when the message indicates a need for encouragement to take action
+    
+    Analyze the query thoroughly before deciding on the most appropriate category.
+    """),
+    ("human", "{query}")
+])
+
+# Create content classifier prompt
+classifier_prompt = ChatPromptTemplate.from_messages([
+    ("system", """You are an expert at classifying mental health messages to help provide appropriate responses.
+    
+    Analyze the message and classify it according to:
+    
+    1. Content Type:
+       - question: Direct question seeking information
+       - statement: Sharing information without a direct question
+       - request_for_help: Explicitly asking for assistance
+       - emotional_expression: Primarily expressing feelings
+       - sharing_experience: Describing personal experiences
+       - follow_up: Continuing a previous conversation
+       - greeting: Simple hello or conversation starter
+       - gratitude: Expressing thanks
+    
+    2. Urgency Level:
+       - low: No time pressure, general interest
+       - medium: Would like help soon but not immediately
+       - high: Needs help very soon, showing distress
+       - emergency: Crisis situation requiring immediate attention
+    
+    3. Complexity:
+       - simple: Straightforward, single concern
+       - moderate: Multiple related concerns or nuanced issue
+       - complex: Multiple interrelated issues or complicated situation
+    
+    4. Emotional Tone:
+       - positive: Hopeful, happy, grateful, content
+       - neutral: Matter-of-fact, informational, calm
+       - negative: Sad, anxious, angry, frustrated, fearful
+       - mixed: Combination of different emotions
+    
+    Return your analysis as structured data only.
+    """),
+    ("human", "{query}")
+])
+
+# Create the routers with structured output
+query_router = router_prompt | llm.with_structured_output(QueryRouter)
+content_classifier = classifier_prompt | llm.with_structured_output(ContentClassifier)
+
+def classify_content(state: AgentState) -> Dict:
+    """Classify the content of the user message to better understand intent."""
+    messages = state["messages"]
+    
+    # Get the latest user message
+    if not any(isinstance(msg, HumanMessage) for msg in messages):
+        return state
+    
+    latest_user_msg = [msg for msg in messages if isinstance(msg, HumanMessage)][-1].content
+    
+    # Classify the content using the content classifier
+    try:
+        classification = content_classifier.invoke({"query": latest_user_msg})
+        return {
+            "content_classification": {
+                "content_type": classification.content_type,
+                "urgency_level": classification.urgency_level,
+                "complexity": classification.complexity,
+                "emotional_tone": classification.emotional_tone
+            }
+        }
+    except:
+        # Default classification if classifier fails
+        return {
+            "content_classification": {
+                "content_type": "statement",
+                "urgency_level": "medium",
+                "complexity": "moderate",
+                "emotional_tone": "neutral"
+            }
+        }
+    
+def route_query(state: AgentState) -> Dict:
+    """Route the query to the appropriate pathway based on content classification and message content."""
+    messages = state["messages"]
+    classification = state.get("content_classification", {})
+    
+    # Get the latest user message
+    if not any(isinstance(msg, HumanMessage) for msg in messages):
+        return state
+    
+    latest_user_msg = [msg for msg in messages if isinstance(msg, HumanMessage)][-1].content
+    
+    # First, check urgency level - override for emergencies
+    if classification.get("urgency_level") == "emergency":
+        return {"query_route": "crisis_resources"}
+    
+    # Special handling for greeting/simple interactions
+    if classification.get("content_type") == "greeting":
+        return {"query_route": "general_advice"}
+    
+    # Special handling for gratitude
+    if classification.get("content_type") == "gratitude":
+        return {"query_route": "reflective_listening"}
+    
+    # Route based on the content type and emotional tone
+    content_type = classification.get("content_type", "statement")
+    emotional_tone = classification.get("emotional_tone", "neutral")
+    
+    # Use the query router for specific routing
+    try:
+        # Add context about the classification to help the router
+        enhanced_query = f"{latest_user_msg}\n\nClassification context: {content_type} with {emotional_tone} tone."
+        routing_result = query_router.invoke({"query": enhanced_query})
+        return {"query_route": routing_result.route_to}
+    except:
+        # Fallback routing based on classification if router fails
+        if content_type == "emotional_expression" and emotional_tone == "negative":
+            return {"query_route": "reflective_listening"}
+        elif content_type == "sharing_experience":
+            return {"query_route": "therapeutic_story"}
+        elif content_type == "request_for_help":
+            return {"query_route": "self_care"}
+        elif content_type == "question":
+            return {"query_route": "knowledge_base"}
+        else:
+            return {"query_route": "general_advice"}
+
+def provide_reflective_listening(state: AgentState) -> Dict:
+    """Provide empathetic reflective listening response to validate user feelings."""
+    messages = state["messages"]
+    emotion_analysis = state.get("emotion_analysis", {})
+    
+    # Get the latest user message
+    if not any(isinstance(msg, HumanMessage) for msg in messages):
+        return state
+    
+    latest_user_msg = [msg for msg in messages if isinstance(msg, HumanMessage)][-1].content
+    primary_emotion = emotion_analysis.get("primary_emotion", "neutral")
+    
+    # Create a reflective listening prompt
+    reflection_prompt = ChatPromptTemplate.from_messages([
+        SystemMessage(content="""You are a mental health assistant skilled in reflective listening.
+        
+        Create a response that:
+        1. Mirrors back the person's feelings with validation
+        2. Shows you understand their experience
+        3. Acknowledges the difficulty or importance of what they've shared
+        4. Offers gentle support without pushing advice
+        5. Ends with a small opening for them to share more if they wish
+        
+        Keep your response concise, warm, and focused on their feelings.
+        """),
+        HumanMessage(content=f"""
+        The person shared: "{latest_user_msg}"
+        
+        Their primary emotion appears to be: {primary_emotion}
+        
+        Create a reflective listening response:
+        """)
+    ])
+    
+    # Generate the reflection
+    formatted_messages = reflection_prompt.format_messages()
+    reflection_response = llm.invoke(formatted_messages)
+    
+    # Format as messages
+    new_messages = []
+    
+    if state.get("reasoning_visible", True):
+        reasoning_message = f"""
+        💭 **Using Reflective Listening**
+        
+        I notice you're expressing your feelings and experiences.
+        
+        In this moment, what seems most helpful is to validate what you're feeling and show I understand.
+        
+        I'll focus on mirroring back what I hear, without rushing to solutions or advice.
+        """
+        
+        new_messages.append(
+            FunctionMessage(
+                name="reflection_reasoning",
+                content=reasoning_message
+            )
+        )
+    
+    # Add the reflection as an assistant message
+    new_messages.append(AIMessage(content=reflection_response.content))
+    
+    return {"messages": new_messages}
+
+def provide_motivational_response(state: AgentState) -> Dict:
+    """Provide a motivational response to encourage the user."""
+    messages = state["messages"]
+    emotion_analysis = state.get("emotion_analysis", {})
+    
+    # Get the latest user message
+    if not any(isinstance(msg, HumanMessage) for msg in messages):
+        return state
+    
+    latest_user_msg = [msg for msg in messages if isinstance(msg, HumanMessage)][-1].content
+    primary_emotion = emotion_analysis.get("primary_emotion", "neutral")
+    
+    # Create a motivational prompt
+    motivation_prompt = ChatPromptTemplate.from_messages([
+        SystemMessage(content="""You are a compassionate mental health assistant skilled in motivation.
+        
+        Create an encouraging response that:
+        1. Acknowledges the person's current feelings
+        2. Validates their effort or courage in seeking support
+        3. Offers specific encouragement related to their situation
+        4. Provides a small, achievable step they might consider
+        5. Emphasizes their existing strengths or resources
+        
+        Keep your response warm, genuine, and focused on hope without dismissing difficulties.
+        """),
+        HumanMessage(content=f"""
+        The person shared: "{latest_user_msg}"
+        
+        Their primary emotion appears to be: {primary_emotion}
+        
+        Create a motivational response:
+        """)
+    ])
+    
+    # Generate the motivation
+    formatted_messages = motivation_prompt.format_messages()
+    motivation_response = llm.invoke(formatted_messages)
+    
+    # Format as messages
+    new_messages = []
+    
+    if state.get("reasoning_visible", True):
+        reasoning_message = f"""
+        💭 **Creating Motivational Support**
+        
+        I notice you may benefit from some encouragement and validation.
+        
+        I'll focus on acknowledging your feelings while highlighting your strengths.
+        
+        My goal is to offer gentle encouragement without minimizing challenges.
+        """
+        
+        new_messages.append(
+            FunctionMessage(
+                name="motivation_reasoning",
+                content=reasoning_message
+            )
+        )
+    
+    # Add the motivation as an assistant message
+    new_messages.append(AIMessage(content=motivation_response.content))
+    
+    return {"messages": new_messages}
+
+def provide_resource_sharing(state: AgentState) -> Dict:
+    """Share specific mental health resources based on user needs."""
+    messages = state["messages"]
+    emotion_analysis = state.get("emotion_analysis", {})
+    classification = state.get("content_classification", {})
+    
+    # Get the latest user message
+    if not any(isinstance(msg, HumanMessage) for msg in messages):
+        return state
+    
+    latest_user_msg = [msg for msg in messages if isinstance(msg, HumanMessage)][-1].content
+    primary_emotion = emotion_analysis.get("primary_emotion", "neutral")
+    
+    # Sample resources by category - these would be more comprehensive in production
+    bangladesh_resources = {
+        "general": [
+            "National Institute of Mental Health (NIMH) Bangladesh: 01713-200300",
+            "Bangladesh Mental Health Foundation: www.bmhf.org.bd",
+            "Kaan Pete Roi (emotional support helpline): 01779-554391, 01688-709965",
+            "Bangladesh Association of Psychiatrists: http://bap.org.bd/"
+        ],
+        "depression": [
+            "Depression support groups at Dhaka Community Hospital",
+            "BRAC Mental Health Program: https://www.brac.net/",
+            "PDF Guide: 'Understanding Depression in Bangladesh Context'"
+        ],
+        "anxiety": [
+            "Anxiety management workshops at Psychological Health & Wellness Clinic (Dhaka)",
+            "Breathing & Mindfulness resources in Bengali: mentalhealthbd.org/anxiety",
+            "Anxiety support forum: bangladesh-anxiety-support.groups.io"
+        ],
+        "stress": [
+            "Work-Life Balance workshops by LifeSpring Counseling Center",
+            "Stress Management techniques in Bengali - downloadable audio",
+            "Virtual stress support groups (weekly via Zoom)"
+        ]
+    }
+    
+    # Identify which resources to share
+    resource_category = "general"
+    if "depress" in primary_emotion.lower() or "sad" in primary_emotion.lower():
+        resource_category = "depression"
+    elif "anx" in primary_emotion.lower() or "worry" in primary_emotion.lower() or "fear" in primary_emotion.lower():
+        resource_category = "anxiety"
+    elif "stress" in primary_emotion.lower() or "overwhelm" in primary_emotion.lower():
+        resource_category = "stress"
+    
+    resources = bangladesh_resources[resource_category]
+    
+    # Format as messages
+    new_messages = []
+    
+    if state.get("reasoning_visible", True):
+        reasoning_message = f"""
+        💭 **Finding Relevant Resources**
+        
+        Based on your message, I think these {resource_category}-related resources in Bangladesh might be helpful.
+        
+        I'm selecting resources that are accessible and culturally appropriate for your context.
+        
+        These complement our conversation but don't replace professional support.
+        """
+        
+        new_messages.append(
+            FunctionMessage(
+                name="resource_reasoning",
+                content=reasoning_message
+            )
+        )
+    
+    # Create resource message
+    resource_message = f"""
+    **Bangladesh Mental Health Resources for {resource_category.capitalize()}**
+    
+    Here are some resources that might be helpful:
+    
+    """
+    
+    for resource in resources:
+        resource_message += f"• {resource}\n"
+    
+    resource_message += """
+    
+    Would you like more specific information about any of these resources? Or would you prefer resources for a different concern?
+    
+    Remember that while these resources can be helpful, they're not a substitute for professional mental health support when needed.
+    """
+    
+    # Add the resources as an assistant message
+    new_messages.append(AIMessage(content=resource_message))
+    
+    return {"messages": new_messages}
+
+# Enhanced choose_pathway to handle more route options
 def choose_pathway(state: AgentState) -> Literal[
     "crisis_path", 
     "knowledge_path", 
@@ -1600,9 +2394,14 @@ def choose_pathway(state: AgentState) -> Literal[
     "mood_tracking_path",
     "cbt_path",
     "self_care_path",
-    "education_path"
+    "education_path",
+    "story_path",
+    "reflective_path",
+    "motivational_path",
+    "resource_path",
+    "follow_up_path"
 ]:
-    """Choose the appropriate pathway based on routing result."""
+    """Choose the appropriate pathway based on routing result and content classification."""
     route = state.get("query_route", "general_advice")
     
     if route == "crisis_resources":
@@ -1621,61 +2420,49 @@ def choose_pathway(state: AgentState) -> Literal[
         return "self_care_path"
     elif route == "psychoeducation":
         return "education_path"
+    elif route == "therapeutic_story":
+        return "story_path"
+    elif route == "reflective_listening":
+        return "reflective_path"
+    elif route == "motivational":
+        return "motivational_path"
+    elif route == "resource_sharing":
+        return "resource_path"
+    elif route == "follow_up":
+        return "follow_up_path"
     else:
         return "general_path"
 
-# Define get_route_destination before using it
+# Enhanced get_route_destination to include new options
 def get_route_destination(state: AgentState) -> str:
     """Map query_route to a valid destination key."""
     route = state.get("query_route", "general_advice")
     
     # Only return exact matches for these specific routes
-    if route in ["cbt_exercise", "self_care", "psychoeducation"]:
-        return route
+    if route in ["cbt_exercise", "self_care", "psychoeducation", "therapeutic_story", 
+                "reflective_listening", "motivational", "resource_sharing"]:
+        # Convert route names to node names
+        route_to_node = {
+            "cbt_exercise": "provide_cbt",
+            "self_care": "suggest_self_care",
+            "psychoeducation": "provide_education",
+            "therapeutic_story": "provide_therapeutic_story",
+            "reflective_listening": "provide_reflective_listening",
+            "motivational": "provide_motivational",
+            "resource_sharing": "provide_resources"
+        }
+        return route_to_node.get(route, "default")
     else:
         # All other routes go to the default destination
         return "default"
-    
-# Define QueryRouter class
-class QueryRouter(BaseModel):
-    """Route a user query to the most appropriate mental health resource."""
-    route_to: Literal["knowledge_base", "crisis_resources", "video_resources", 
-                      "academic_research", "general_advice", "mood_tracking", 
-                      "cbt_exercise", "self_care", "psychoeducation"] = Field(
-        ..., description="Route the query to the most appropriate resource."
-    )
 
-# Create router
-router_prompt = ChatPromptTemplate.from_messages([
-    ("system", "You are an expert at routing mental health queries to appropriate resources."),
-    ("human", "{query}")
-])
-
-query_router = router_prompt | llm.with_structured_output(QueryRouter)
-    
-def route_query(state: AgentState) -> Dict:
-    """Route the query to the appropriate pathway based on content."""
-    messages = state["messages"]
-    
-    # Get the latest user message
-    if not any(isinstance(msg, HumanMessage) for msg in messages):
-        return state
-    
-    latest_user_msg = [msg for msg in messages if isinstance(msg, HumanMessage)][-1].content
-    
-    # Route the query using the query_router
-    try:
-        routing_result = query_router.invoke({"query": latest_user_msg})
-        return {"query_route": routing_result.route_to}
-    except:
-        return {"query_route": "general_advice"}
-
-# Now define the workflow
+# Now define the workflow with the enhanced structure
 workflow = StateGraph(AgentState)
 
-# Add all nodes
+# Add all base nodes
 workflow.add_node("initialize", initialize_state)
 workflow.add_node("update_preferences", update_user_preferences)
+workflow.add_node("classify_content", classify_content)
 workflow.add_node("route_query", route_query)
 workflow.add_node("analyze_emotion", analyze_emotion_and_needs)
 workflow.add_node("determine_strategy", determine_response_strategy)
@@ -1684,18 +2471,25 @@ workflow.add_node("explain_tools", explain_tool_selection)
 workflow.add_node("use_tools", select_and_use_tools)
 workflow.add_node("generate_response", generate_response)
 
-# Add new feature nodes
+# Add feature nodes
 workflow.add_node("process_mood", process_mood_tracking)
 workflow.add_node("provide_cbt", provide_cbt_exercise)
 workflow.add_node("suggest_self_care", suggest_self_care)
 workflow.add_node("provide_education", provide_education)
+workflow.add_node("provide_therapeutic_story", provide_therapeutic_story)
 
-# Base edges
+# Add new specialized nodes
+workflow.add_node("provide_reflective_listening", provide_reflective_listening)
+workflow.add_node("provide_motivational", provide_motivational_response)
+workflow.add_node("provide_resources", provide_resource_sharing)
+
+# Define the updated workflow path
 workflow.add_edge(START, "initialize")
 workflow.add_edge("initialize", "update_preferences")
-workflow.add_edge("update_preferences", "route_query")
+workflow.add_edge("update_preferences", "classify_content")
+workflow.add_edge("classify_content", "route_query")
 
-# Add conditional edges from router to different paths
+# Content analysis pathway
 workflow.add_conditional_edges(
     "route_query",
     choose_pathway,
@@ -1704,47 +2498,64 @@ workflow.add_conditional_edges(
         "knowledge_path": "analyze_emotion",
         "video_path": "analyze_emotion",
         "research_path": "analyze_emotion",
-        "mood_tracking_path": "analyze_emotion",  # Still analyze emotion first
-        "cbt_path": "analyze_emotion",  # Still analyze emotion first
-        "self_care_path": "analyze_emotion",  # Still analyze emotion first
-        "education_path": "analyze_emotion",  # Still analyze emotion first
+        "mood_tracking_path": "analyze_emotion",
+        "cbt_path": "analyze_emotion",
+        "self_care_path": "analyze_emotion",
+        "education_path": "analyze_emotion",
+        "story_path": "analyze_emotion",
+        "reflective_path": "analyze_emotion",
+        "motivational_path": "analyze_emotion",
+        "resource_path": "analyze_emotion",
+        "follow_up_path": "analyze_emotion",
         "general_path": "analyze_emotion"
     }
 )
 
-# Main path
+# Main emotion analysis and strategy path
 workflow.add_edge("analyze_emotion", "determine_strategy")
 
-# Now add specialized forks based on the route
-# For mood tracking path
-workflow.add_conditional_edges(
-    "determine_strategy",
-    lambda state: "mood_tracking" if state.get("query_route") == "mood_tracking" else "continue",
-    {
-        "mood_tracking": "process_mood",
-        "continue": "crisis_resources"
-    }
-)
-workflow.add_edge("process_mood", "crisis_resources")
+# From strategy determination to crisis resources check
+workflow.add_edge("determine_strategy", "crisis_resources")
 
-# Handle different paths after crisis resources
+# Specialized routing after crisis resources check
 workflow.add_conditional_edges(
     "crisis_resources",
     get_route_destination,
     {
-        "cbt_exercise": "provide_cbt",
-        "self_care": "suggest_self_care",
-        "psychoeducation": "provide_education",
+        "provide_cbt": "provide_cbt",  
+        "suggest_self_care": "suggest_self_care",
+        "provide_education": "provide_education",
+        "provide_therapeutic_story": "provide_therapeutic_story",
+        "provide_reflective_listening": "provide_reflective_listening",
+        "provide_motivational": "provide_motivational",
+        "provide_resources": "provide_resources",
         "default": "explain_tools"  # All other routes
     }
 )
+
+# Special handling for mood tracking
+workflow.add_conditional_edges(
+    "crisis_resources",
+    lambda state: "mood_tracking" if state.get("query_route") == "mood_tracking" else "continue",
+    {
+        "mood_tracking": "process_mood",
+        "continue": "continue_normal_flow"  # Dummy node for the conditional edge
+    }
+)
+workflow.add_node("continue_normal_flow", lambda x: x)  # Identity function
+workflow.add_edge("continue_normal_flow", "explain_tools")
+workflow.add_edge("process_mood", "explain_tools")
 
 # Connect all specialized nodes back to the main flow
 workflow.add_edge("provide_cbt", "generate_response")
 workflow.add_edge("suggest_self_care", "generate_response")
 workflow.add_edge("provide_education", "generate_response")
+workflow.add_edge("provide_therapeutic_story", "generate_response")
+workflow.add_edge("provide_reflective_listening", "generate_response")
+workflow.add_edge("provide_motivational", "generate_response")
+workflow.add_edge("provide_resources", "generate_response")
 
-# Standard flow for routes that use tools
+# Tools selection and use
 workflow.add_conditional_edges(
     "explain_tools",
     route_to_tools,
@@ -1753,6 +2564,7 @@ workflow.add_conditional_edges(
         "generate_response": "generate_response"
     }
 )
+
 workflow.add_edge("use_tools", "generate_response")
 workflow.add_edge("generate_response", END)
 
